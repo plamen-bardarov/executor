@@ -20,17 +20,11 @@ var _ = Describe("EmitCheckFailureMetricStep", func() {
 		step             ifrit.Runner
 		fakeMetronClient *mfakes.FakeIngressClient
 		errorToReturn    error
-		checkPath        string
-		checkPort        int
-		checkTImeout     int
 		checkProtocol    executor.CheckProtocol
 		checkType        executor.HealthcheckType
 	)
 
 	BeforeEach(func() {
-		checkPath = "/healtz"
-		checkPort = 80
-		checkTImeout = 1
 		checkProtocol = executor.HTTPCheck
 		checkType = executor.IsLivenessCheck
 		fakeMetronClient = new(mfakes.FakeIngressClient)
@@ -43,7 +37,7 @@ var _ = Describe("EmitCheckFailureMetricStep", func() {
 	})
 
 	JustBeforeEach(func() {
-		step = steps.NewEmitCheckFailureMetricStep(subStep, checkPath, checkPort, checkTImeout, checkProtocol, checkType, fakeMetronClient)
+		step = steps.NewEmitCheckFailureMetricStep(subStep, checkProtocol, checkType, fakeMetronClient)
 	})
 
 	Describe("Ready", func() {

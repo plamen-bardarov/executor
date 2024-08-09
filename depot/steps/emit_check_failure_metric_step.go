@@ -11,9 +11,6 @@ import (
 
 type emitCheckFailureMetricStep struct {
 	subStep       ifrit.Runner
-	path          string
-	port          int
-	timeout       int
 	checkProtocol executor.CheckProtocol
 	checkType     executor.HealthcheckType
 	metronClient  loggingclient.IngressClient
@@ -25,17 +22,11 @@ const (
 
 func NewEmitCheckFailureMetricStep(
 	subStep ifrit.Runner,
-	path string,
-	port int,
-	timeout int,
 	checkProtocol executor.CheckProtocol,
 	checkType executor.HealthcheckType,
 	metronClient loggingclient.IngressClient) ifrit.Runner {
 	return &emitCheckFailureMetricStep{
 		subStep:       subStep,
-		path:          path,
-		port:          port,
-		timeout:       timeout,
 		checkProtocol: checkProtocol,
 		checkType:     checkType,
 		metronClient:  metronClient,

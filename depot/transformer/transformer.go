@@ -639,8 +639,7 @@ func (t *transformer) createCheck(
 	}
 
 	if emitMetric {
-		wrapperStep = steps.NewEmitCheckFailureMetricStep(
-			wrapperStep, path, port, timeout, checkProtocol, checkType, metronClient)
+		wrapperStep = steps.NewEmitCheckFailureMetricStep(wrapperStep, checkProtocol, checkType, metronClient)
 	}
 
 	return wrapperStep
