@@ -448,6 +448,7 @@ func (n *storeNode) createGardenContainer(logger lager.Logger, traceID string, i
 	info.MemoryLimit = containerSpec.Limits.Memory.LimitInBytes
 	info.DiskLimit = containerSpec.Limits.Disk.ByteHard
 
+	logger.Info("container-created", lager.Data{"info": info, "container-info": containerInfo})
 	return gardenContainer, nil
 }
 
