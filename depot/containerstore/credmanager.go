@@ -293,7 +293,11 @@ func (c *credManager) generateInstanceIdentityCred(logger lager.Logger, containe
 
 	start := c.clock.Now()
 	idCred, err := c.generateCredForSAN(logger,
-		certificateSAN{IPAddress: ipForCert, OrganizationalUnits: container.CertificateProperties.OrganizationalUnit},
+		certificateSAN{
+			IPAddress:           ipForCert,
+			IPAddressV6:         container.InternalIPv6,
+			OrganizationalUnits: container.CertificateProperties.OrganizationalUnit,
+		},
 		certGUID,
 	)
 	var metricErr error
@@ -419,6 +423,7 @@ func pemEncode(bytes []byte, blockType string, writer io.Writer) error {
 
 type certificateSAN struct {
 	IPAddress           string
+	IPAddressV6         string
 	InternalRoutes      internalroutes.InternalRoutes
 	OrganizationalUnits []string
 }
@@ -430,6 +435,11 @@ func createCertificateTemplate(guid string, certSAN certificateSAN, notBefore, n
 	} else {
 		ipaddr = []net.IP{net.ParseIP(certSAN.IPAddress)}
 	}
+
+	if len(certSAN.IPAddressV6) != 0 && net.ParseIP(certSAN.IPAddressV6) != nil {
+		ipaddr = append(ipaddr, net.ParseIP(certSAN.IPAddressV6))
+	}
+
 	dnsNames := []string{guid}
 	for _, route := range certSAN.InternalRoutes {
 		dnsNames = append(dnsNames, route.Hostname)
