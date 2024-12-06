@@ -508,7 +508,7 @@ var _ = Describe("ProxyConfigHandler", func() {
 
 				Expect(proxyConfig.StaticResources.Listeners).To(HaveLen(2))
 				l0 := createListener(expectedListener{
-					name:                     "listener-8080-61001",
+					name:                     "listenerV4-8080-61001",
 					listenPort:               61001,
 					statPrefix:               "stats-8080-61001",
 					clusterName:              "service-cluster-8080",
@@ -519,7 +519,7 @@ var _ = Describe("ProxyConfigHandler", func() {
 				})
 				Expect(proto.Equal(proxyConfig.StaticResources.Listeners[0], l0)).To(BeTrue())
 				l1 := createListener(expectedListener{
-					name:                     "listener-8080-61443",
+					name:                     "listenerV4-8080-61443",
 					listenPort:               61443,
 					statPrefix:               "stats-8080-61443",
 					clusterName:              "service-cluster-8080",
@@ -695,7 +695,7 @@ var _ = Describe("ProxyConfigHandler", func() {
 
 			Expect(proxyConfig.StaticResources.Listeners).To(HaveLen(2))
 			l0 := createListener(expectedListener{
-				name:                     "listener-8080-61001",
+				name:                     "listenerV4-8080-61001",
 				listenPort:               61001,
 				statPrefix:               "stats-8080-61001",
 				clusterName:              "service-cluster-8080",
@@ -704,9 +704,10 @@ var _ = Describe("ProxyConfigHandler", func() {
 				sdsSecretName:            "id-cert-and-key",
 				sdsFileName:              "/etc/cf-assets/envoy_config/sds-id-cert-and-key.yaml",
 			})
+			logger.Info(proxyConfig.StaticResources.Listeners[0].Name)
 			Expect(proto.Equal(proxyConfig.StaticResources.Listeners[0], l0)).To(BeTrue())
 			l1 := createListener(expectedListener{
-				name:                     "listener-8080-61443",
+				name:                     "listenerV4-8080-61443",
 				listenPort:               61443,
 				statPrefix:               "stats-8080-61443",
 				clusterName:              "service-cluster-8080",
@@ -803,7 +804,7 @@ var _ = Describe("ProxyConfigHandler", func() {
 
 				Expect(proxyConfig.StaticResources.Listeners).To(HaveLen(2))
 				l0 := createListener(expectedListener{
-					name:                     "listener-8080-61001",
+					name:                     "listenerV4-8080-61001",
 					listenPort:               61001,
 					statPrefix:               "stats-8080-61001",
 					clusterName:              "service-cluster-8080",
@@ -814,7 +815,7 @@ var _ = Describe("ProxyConfigHandler", func() {
 				})
 				Expect(proto.Equal(proxyConfig.StaticResources.Listeners[0], l0)).To(BeTrue())
 				l1 := createListener(expectedListener{
-					name:                     "listener-8080-61443",
+					name:                     "listenerV4-8080-61443",
 					listenPort:               61443,
 					statPrefix:               "stats-8080-61443",
 					clusterName:              "service-cluster-8080",
@@ -897,7 +898,7 @@ var _ = Describe("ProxyConfigHandler", func() {
 				}
 				Expect(proxyConfig.StaticResources.Listeners).To(HaveLen(2))
 				l0 := createListener(expectedListener{
-					name:                     "listener-8080-61001",
+					name:                     "listenerV4-8080-61001",
 					listenPort:               61001,
 					statPrefix:               "stats-8080-61001",
 					clusterName:              "service-cluster-8080",
@@ -906,10 +907,10 @@ var _ = Describe("ProxyConfigHandler", func() {
 					sdsSecretName:            "id-cert-and-key",
 					sdsFileName:              "/etc/cf-assets/envoy_config/sds-id-cert-and-key.yaml",
 				})
-				Expect(proto.Equal(listenersMap["listener-8080-61001"], l0)).To(BeTrue())
+				Expect(proto.Equal(listenersMap["listenerV4-8080-61001"], l0)).To(BeTrue())
 
 				l1 := createListener(expectedListener{
-					name:                     "listener-2222-61002",
+					name:                     "listenerV4-2222-61002",
 					listenPort:               61002,
 					statPrefix:               "stats-2222-61002",
 					clusterName:              "service-cluster-2222",
@@ -918,7 +919,7 @@ var _ = Describe("ProxyConfigHandler", func() {
 					sdsSecretName:            "id-cert-and-key",
 					sdsFileName:              "/etc/cf-assets/envoy_config/sds-id-cert-and-key.yaml",
 				})
-				Expect(proto.Equal(listenersMap["listener-2222-61002"], l1)).To(BeTrue())
+				Expect(proto.Equal(listenersMap["listenerV4-2222-61002"], l1)).To(BeTrue())
 			})
 
 			Context("when no ports are left", func() {

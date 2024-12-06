@@ -351,6 +351,25 @@ func generateProxyConfig(
 
 	for containerPort := range uniqueContainerPorts {
 		clusterName := fmt.Sprintf("service-cluster-%d", containerPort)
+
+		endpoints := []*envoy_endpoint.LbEndpoint{{
+			HostIdentifier: &envoy_endpoint.LbEndpoint_Endpoint{
+				Endpoint: &envoy_endpoint.Endpoint{
+					Address: envoyAddr(container.InternalIP, containerPort),
+				},
+			},
+		}}
+
+		if len(container.InternalIPv6) != 0 {
+			endpoints = append(endpoints, &envoy_endpoint.LbEndpoint{
+				HostIdentifier: &envoy_endpoint.LbEndpoint_Endpoint{
+					Endpoint: &envoy_endpoint.Endpoint{
+						Address: envoyAddr(container.InternalIPv6, containerPort),
+					},
+				},
+			})
+		}
+
 		clusters = append(clusters, &envoy_cluster.Cluster{
 			Name:                 clusterName,
 			ClusterDiscoveryType: &envoy_cluster.Cluster_Type{Type: envoy_cluster.Cluster_STATIC},
@@ -358,13 +377,7 @@ func generateProxyConfig(
 			LoadAssignment: &envoy_endpoint.ClusterLoadAssignment{
 				ClusterName: clusterName,
 				Endpoints: []*envoy_endpoint.LocalityLbEndpoints{{
-					LbEndpoints: []*envoy_endpoint.LbEndpoint{{
-						HostIdentifier: &envoy_endpoint.LbEndpoint_Endpoint{
-							Endpoint: &envoy_endpoint.Endpoint{
-								Address: envoyAddr(container.InternalIP, containerPort),
-							},
-						},
-					}},
+					LbEndpoints: endpoints,
 				}},
 			},
 			CircuitBreakers: &envoy_cluster.CircuitBreakers{
@@ -381,6 +394,13 @@ func generateProxyConfig(
 		return nil, fmt.Errorf("generating listeners: %s", err)
 	}
 
+	var nodeId string
+	if len(container.InternalIPv6) == 0 {
+		nodeId = fmt.Sprintf("sidecar~%s~%s~x", container.InternalIP, container.Guid)
+	} else {
+		nodeId = fmt.Sprintf("sidecar~%s~%s~%s~x", container.InternalIP, container.InternalIPv6, container.Guid)
+	}
+
 	config := &envoy_bootstrap.Bootstrap{
 		Admin: &envoy_bootstrap.Admin{
 			AccessLogPath: AdminAccessLog,
@@ -394,7 +414,7 @@ func generateProxyConfig(
 			},
 		},
 		Node: &envoy_core.Node{
-			Id:      fmt.Sprintf("sidecar~%s~%s~x", container.InternalIP, container.Guid),
+			Id:      nodeId,
 			Cluster: "proxy-cluster",
 		},
 		StaticResources: &envoy_bootstrap.Bootstrap_StaticResources{
@@ -585,9 +605,9 @@ func generateListeners(container executor.Container, requireClientCerts, http2En
 			return nil, err
 		}
 
-		listenerName := fmt.Sprintf("listener-%d-%d", portMap.ContainerPort, portMap.ContainerTLSProxyPort)
-		listener := &envoy_listener.Listener{
-			Name:    listenerName,
+		listenerNameV4 := fmt.Sprintf("listenerV4-%d-%d", portMap.ContainerPort, portMap.ContainerTLSProxyPort)
+		listenerV4 := &envoy_listener.Listener{
+			Name:    listenerNameV4,
 			Address: envoyAddr("0.0.0.0", portMap.ContainerTLSProxyPort),
 			FilterChains: []*envoy_listener.FilterChain{{
 				Filters: []*envoy_listener.Filter{
@@ -599,7 +619,7 @@ func generateListeners(container executor.Container, requireClientCerts, http2En
 					},
 				},
 				TransportSocket: &envoy_core.TransportSocket{
-					Name: listenerName,
+					Name: listenerNameV4,
 					ConfigType: &envoy_core.TransportSocket_TypedConfig{
 						TypedConfig: tlsContextAny,
 					},
@@ -608,7 +628,34 @@ func generateListeners(container executor.Container, requireClientCerts, http2En
 			},
 		}
 
-		listeners = append(listeners, listener)
+		if len(container.InternalIPv6) != 0 {
+			listenerNameV6 := fmt.Sprintf("listenerV6-%d-%d", portMap.ContainerPort, portMap.ContainerTLSProxyPort)
+
+			listenerV6 := &envoy_listener.Listener{
+				Name:    listenerNameV6,
+				Address: envoyAddr("::", portMap.ContainerTLSProxyPort),
+				FilterChains: []*envoy_listener.FilterChain{{
+					Filters: []*envoy_listener.Filter{
+						{
+							Name: filterName,
+							ConfigType: &envoy_listener.Filter_TypedConfig{
+								TypedConfig: filterConfig,
+							},
+						},
+					},
+					TransportSocket: &envoy_core.TransportSocket{
+						Name: listenerNameV4,
+						ConfigType: &envoy_core.TransportSocket_TypedConfig{
+							TypedConfig: tlsContextAny,
+						},
+					},
+				}},
+			}
+
+			listeners = append(listeners, listenerV6)
+		}
+
+		listeners = append(listeners, listenerV4)
 	}
 
 	return listeners, nil
