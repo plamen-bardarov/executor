@@ -5,6 +5,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	alf "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
+	ghodss_yaml "github.com/ghodss/yaml"
 	"math"
 	"os"
 	"path/filepath"
@@ -22,11 +24,11 @@ import (
 	envoy_endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	envoy_listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	envoy_metrics "github.com/envoyproxy/go-control-plane/envoy/config/metrics/v3"
+	als "github.com/envoyproxy/go-control-plane/envoy/extensions/access_loggers/file/v3"
 	envoy_tcp_proxy "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/tcp_proxy/v3"
 	envoy_tls "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	envoy_discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	envoy_matcher "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
-	ghodss_yaml "github.com/ghodss/yaml"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/duration"
 	pstruct "github.com/golang/protobuf/ptypes/struct"
@@ -600,6 +602,11 @@ func generateListeners(container executor.Container, requireClientCerts, http2En
 			}
 		}
 
+		alsConfig := &als.FileAccessLog{
+			Path: "/var/log/envoy/access.log",
+		}
+		alsConfigPbst, err := anypb.New(alsConfig)
+
 		tlsContextAny, err := anypb.New(tlsContext)
 		if err != nil {
 			return nil, err
@@ -624,8 +631,13 @@ func generateListeners(container executor.Container, requireClientCerts, http2En
 						TypedConfig: tlsContextAny,
 					},
 				},
-			},
-			},
+			}},
+			AccessLog: []*alf.AccessLog{{
+				Name: "envoy.access_loggers.file",
+				ConfigType: &alf.AccessLog_TypedConfig{
+					TypedConfig: alsConfigPbst,
+				},
+			}},
 		}
 
 		if len(container.InternalIPv6) != 0 {
@@ -644,10 +656,16 @@ func generateListeners(container executor.Container, requireClientCerts, http2En
 						},
 					},
 					TransportSocket: &envoy_core.TransportSocket{
-						Name: listenerNameV4,
+						Name: listenerNameV6,
 						ConfigType: &envoy_core.TransportSocket_TypedConfig{
 							TypedConfig: tlsContextAny,
 						},
+					},
+				}},
+				AccessLog: []*alf.AccessLog{{
+					Name: "envoy.access_loggers.file",
+					ConfigType: &alf.AccessLog_TypedConfig{
+						TypedConfig: alsConfigPbst,
 					},
 				}},
 			}
