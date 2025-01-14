@@ -63,8 +63,10 @@ type transformer struct {
 	gracefulShutdownInterval    time.Duration
 	healthCheckWorkPool         *workpool.WorkPool
 
-	useContainerProxy bool
-	drainWait         time.Duration
+	useContainerProxy                bool
+	drainWait                        time.Duration
+	enableContainerProxyHealthChecks bool
+	proxyHealthCheckInterval         time.Duration
 
 	postSetupHook []string
 	postSetupUser string
@@ -90,6 +92,13 @@ func WithContainerProxy(drainWait time.Duration) Option {
 	return func(t *transformer) {
 		t.useContainerProxy = true
 		t.drainWait = drainWait
+	}
+}
+
+func WithProxyLivenessChecks(interval time.Duration) Option {
+	return func(t *transformer) {
+		t.enableContainerProxyHealthChecks = true
+		t.proxyHealthCheckInterval = interval
 	}
 }
 
@@ -447,8 +456,9 @@ func (t *transformer) StepsRunner(
 
 	if t.useContainerProxy && t.useDeclarativeHealthCheck {
 		envoyStartupLogger := logger.Session("envoy-startup-check")
+		envoyLivenessLogger := logger.Session("envoy-liveness-check")
 
-		for idx, p := range config.ProxyTLSPorts {
+		for idx, port := range config.ProxyTLSPorts {
 			// add envoy startup checks
 			startupSidecarName := fmt.Sprintf("%s-envoy-startup-healthcheck-%d", gardenContainer.Handle(), idx)
 
@@ -458,7 +468,7 @@ func (t *transformer) StepsRunner(
 				config.BindMounts,
 				"",
 				startupSidecarName,
-				int(p),
+				int(port),
 				DefaultDeclarativeHealthcheckRequestTimeout,
 				executor.TCPCheck,
 				executor.IsStartupCheck,
@@ -469,31 +479,36 @@ func (t *transformer) StepsRunner(
 				false,
 			)
 
-			livenessStep := t.createCheck(
-				&container,
-				gardenContainer,
-				config.BindMounts,
-				"",
-				fmt.Sprintf("%s-envoy-liveness-healthcheck-%d", gardenContainer.Handle(), idx),
-				int(p),
-				DefaultDeclarativeHealthcheckRequestTimeout,
-				executor.TCPCheck,
-				executor.IsLivenessCheck,
-				t.unhealthyMonitoringInterval,
-				envoyStartupLogger,
-				"instance proxy failed to start",
-				config.MetronClient,
-				false,
-			)
+			if t.enableContainerProxyHealthChecks {
+				livenessSidecarName := fmt.Sprintf("%s-envoy-liveness-healthcheck-%d", gardenContainer.Handle(), idx)
+
+				livenessStep := t.createCheck(
+					&container,
+					gardenContainer,
+					config.BindMounts,
+					"",
+					livenessSidecarName,
+					int(port),
+					DefaultDeclarativeHealthcheckRequestTimeout,
+					executor.TCPCheck,
+					executor.IsLivenessCheck,
+					t.proxyHealthCheckInterval,
+					envoyLivenessLogger,
+					"instance proxy health check failed",
+					config.MetronClient,
+					t.emitHealthCheckMetrics,
+				)
+
+				proxyLivenessChecks = append(proxyLivenessChecks, livenessStep)
+			}
 
 			proxyStartupChecks = append(proxyStartupChecks, step)
-			proxyLivenessChecks = append(proxyLivenessChecks, livenessStep)
 		}
 	}
 	var readinessChan chan steps.ReadinessState
 	if container.CheckDefinition != nil && t.useDeclarativeHealthCheck {
 		if container.CheckDefinition.Checks != nil {
-			monitor = t.transformCheckDefinitionWithChristmasBonuses(logger,
+			monitor = t.transformCheckDefinition(logger,
 				&container,
 				gardenContainer,
 				logStreamer,
@@ -819,7 +834,7 @@ func (t *transformer) applyCheckDefaults(timeout int, interval time.Duration, pa
 	return timeout, interval, path
 }
 
-func (t *transformer) transformCheckDefinitionWithChristmasBonuses(
+func (t *transformer) transformCheckDefinition(
 	logger lager.Logger,
 	container *executor.Container,
 	gardenContainer garden.Container,
@@ -937,135 +952,6 @@ func (t *transformer) transformCheckDefinitionWithChristmasBonuses(
 
 	startupCheck := steps.NewParallel(append(proxyStartupChecks, startupChecks...))
 	livenessChecks = append(livenessChecks, proxyLivenessChecks...)
-	livenessCheck := steps.NewCodependent(livenessChecks, false, false)
-
-	return steps.NewHealthCheckStep(
-		startupCheck,
-		livenessCheck,
-		logger,
-		t.clock,
-		logstreamer,
-		logstreamer.WithSource(sourceName),
-		time.Duration(container.StartTimeoutMs)*time.Millisecond,
-	)
-}
-
-func (t *transformer) transformCheckDefinition(
-	logger lager.Logger,
-	container *executor.Container,
-	gardenContainer garden.Container,
-	logstreamer log_streamer.LogStreamer,
-	bindMounts []garden.BindMount,
-	proxyStartupChecks []ifrit.Runner,
-	metronClient loggingclient.IngressClient,
-) ifrit.Runner {
-	var startupChecks []ifrit.Runner
-	var livenessChecks []ifrit.Runner
-
-	sourceName := HealthLogSource
-	if container.CheckDefinition.LogSource != "" {
-		sourceName = container.CheckDefinition.LogSource
-	}
-
-	logger.Info("transform-check-definitions-starting")
-	defer func() {
-		logger.Info("transform-check-definitions-finished")
-	}()
-
-	startupLogger := logger.Session("startup-check")
-	livenessLogger := logger.Session("liveness-check")
-
-	for index, check := range container.CheckDefinition.Checks {
-
-		startupSidecarName := fmt.Sprintf("%s-startup-healthcheck-%d", gardenContainer.Handle(), index)
-		livenessSidecarName := fmt.Sprintf("%s-liveness-healthcheck-%d", gardenContainer.Handle(), index)
-
-		if err := check.Validate(); err != nil {
-			logger.Error("invalid-check", err, lager.Data{"check": check})
-		} else if check.HttpCheck != nil {
-			timeout, interval, path := t.applyCheckDefaults(
-				int(check.HttpCheck.RequestTimeoutMs),
-				time.Duration(check.HttpCheck.IntervalMs)*time.Millisecond,
-				check.HttpCheck.Path,
-			)
-
-			startupChecks = append(startupChecks, t.createCheck(
-				container,
-				gardenContainer,
-				bindMounts,
-				path,
-				startupSidecarName,
-				int(check.HttpCheck.Port),
-				timeout,
-				executor.HTTPCheck,
-				executor.IsStartupCheck,
-				t.unhealthyMonitoringInterval,
-				startupLogger,
-				"",
-				metronClient,
-				false,
-			))
-			livenessChecks = append(livenessChecks, t.createCheck(
-				container,
-				gardenContainer,
-				bindMounts,
-				path,
-				livenessSidecarName,
-				int(check.HttpCheck.Port),
-				timeout,
-				executor.HTTPCheck,
-				executor.IsLivenessCheck,
-				interval,
-				livenessLogger,
-				"",
-				metronClient,
-				t.emitHealthCheckMetrics,
-			))
-
-		} else if check.TcpCheck != nil {
-
-			timeout, interval, _ := t.applyCheckDefaults(
-				int(check.TcpCheck.ConnectTimeoutMs),
-				time.Duration(check.TcpCheck.IntervalMs)*time.Millisecond,
-				"", // only needed for http checks
-			)
-
-			startupChecks = append(startupChecks, t.createCheck(
-				container,
-				gardenContainer,
-				bindMounts,
-				"",
-				startupSidecarName,
-				int(check.TcpCheck.Port),
-				timeout,
-				executor.TCPCheck,
-				executor.IsStartupCheck,
-				t.unhealthyMonitoringInterval,
-				startupLogger,
-				"",
-				metronClient,
-				false,
-			))
-			livenessChecks = append(livenessChecks, t.createCheck(
-				container,
-				gardenContainer,
-				bindMounts,
-				"",
-				livenessSidecarName,
-				int(check.TcpCheck.Port),
-				timeout,
-				executor.TCPCheck,
-				executor.IsLivenessCheck,
-				interval,
-				livenessLogger,
-				"",
-				metronClient,
-				t.emitHealthCheckMetrics,
-			))
-		}
-	}
-
-	startupCheck := steps.NewParallel(append(proxyStartupChecks, startupChecks...))
 	livenessCheck := steps.NewCodependent(livenessChecks, false, false)
 
 	return steps.NewHealthCheckStep(
